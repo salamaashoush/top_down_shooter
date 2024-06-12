@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.13"
+bevy_pancam = "0.11.1"
+rand = "*"
 
 [workspace]
 resolver = "2" # Important! wgpu/Bevy needs this!

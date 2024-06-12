@@ -5,6 +5,9 @@ use bevy::math::{vec2, vec3};
 use bevy::prelude::*;
 use bevy::time::Stopwatch;
 use bevy::window::{close_on_esc, PrimaryWindow};
+use bevy_pancam::{PanCam, PanCamPlugin};
+use rand::Rng;
+
 // Window
 const WW: f32 = 1200.0;
 const WH: f32 = 900.0;
@@ -14,13 +17,22 @@ const SPRITE_SHEET_PATH: &str = "assets.png";
 const SPRITE_SCALE_FACTOR: f32 = 3.0;
 const TILE_W: usize = 16;
 const TILE_H: usize = 16;
-const SPRITE_SHEET_W: usize = 4;
-const SPRITE_SHEET_H: usize = 4;
-const BULLET_SPAWN_INTERVAL: f32 = 0.2;
-const BULLET_SPEED: f32 = 10.0;
+const SPRITE_SHEET_W: usize = 8;
+const SPRITE_SHEET_H: usize = 8;
+
 // Colors
 const BG_COLOR: (u8, u8, u8) = (197, 204, 184);
 
+// Gun
+const BULLET_SPAWN_INTERVAL: f32 = 0.2;
+const BULLET_SPEED: f32 = 10.0;
+// Player
+const PLAYER_SPEED: f32 = 2.0;
+
+// World
+const WORLD_DECORATION_COUNT: usize = 500;
+const WORLD_H: f32 = 3000.0;
+const WORLD_W: f32 = 2500.0;
 // Resources
 #[derive(Resource)]
 struct GlobalTextureAtlasHandle(Option<Handle<TextureAtlasLayout>>);
@@ -28,8 +40,7 @@ struct GlobalTextureAtlasHandle(Option<Handle<TextureAtlasLayout>>);
 struct GlobalSpriteSheetHandle(Option<Handle<Image>>);
 #[derive(Resource)]
 struct CursorPosition(Option<Vec2>);
-// Player
-const PLAYER_SPEED: f32 = 2.0;
+
 // Components
 #[derive(Component)]
 struct Player;
@@ -76,13 +87,17 @@ fn main() {
     .insert_resource(Msaa::Off)
     .add_plugins(LogDiagnosticsPlugin::default())
     .add_plugins(FrameTimeDiagnosticsPlugin)
+    .add_plugins(PanCamPlugin::default())
     // Custom resources
     .insert_resource(GlobalTextureAtlasHandle(None))
     .insert_resource(GlobalSpriteSheetHandle(None))
     .insert_resource(CursorPosition(None))
     // Systems
     .add_systems(OnEnter(GameState::Loading), load_assets)
-    .add_systems(OnEnter(GameState::GameInit), (setup_camera, init_world))
+    .add_systems(
+      OnEnter(GameState::GameInit),
+      (setup_camera, init_world, spawn_world_decoration),
+    )
     .add_systems(
       Update,
       (
@@ -91,6 +106,7 @@ fn main() {
         update_cursor_position,
         handle_gun_input,
         update_bullets,
+        camera_follow_player,
       )
         .run_if(in_state(GameState::InGame)),
     )
@@ -99,7 +115,9 @@ fn main() {
 }
 
 fn setup_camera(mut commands: Commands) {
-  commands.spawn(Camera2dBundle::default());
+  commands
+    .spawn(Camera2dBundle::default())
+    .insert(PanCam::default());
 }
 
 fn load_assets(
@@ -143,7 +161,7 @@ fn init_world(
       texture: image_handle.0.clone().unwrap(),
       atlas: TextureAtlas {
         layout: texture_atlas.0.clone().unwrap(),
-        index: 2,
+        index: 17,
       },
       transform: Transform::from_scale(Vec3::splat(SPRITE_SCALE_FACTOR)),
       ..default()
@@ -207,6 +225,7 @@ fn update_gun_transform(
     player_pos.y + offset * angle.sin() - 15.0,
   );
   gun_transform.translation = vec3(new_gun_pos.x, new_gun_pos.y, gun_transform.translation.z);
+  gun_transform.translation.z = 15.0;
 }
 
 fn update_cursor_position(
@@ -254,7 +273,7 @@ fn handle_gun_input(
         texture: image_handle.0.clone().unwrap(),
         atlas: TextureAtlas {
           layout: texture_atlas.0.clone().unwrap(),
-          index: 3,
+          index: 16,
         },
         transform: Transform::from_translation(vec3(gun_pos.x, gun_pos.y, 1.0))
           .with_scale(Vec3::splat(SPRITE_SCALE_FACTOR)),
@@ -274,4 +293,43 @@ fn update_bullets(mut bullet_query: Query<(&mut Transform, &BulletDirection), Wi
     transform.translation += vec3(direction.0.x, direction.0.y, 0.0) * BULLET_SPEED;
     transform.translation.z = 10.0;
   }
+}
+
+fn spawn_world_decoration(
+  mut commands: Commands,
+  texture_atlas: Res<GlobalTextureAtlasHandle>,
+  image_handle: Res<GlobalSpriteSheetHandle>,
+) {
+  let mut rng = rand::thread_rng();
+  for _ in 0..WORLD_DECORATION_COUNT {
+    let x = rng.gen_range(-WORLD_W..WORLD_W);
+    let y = rng.gen_range(-WORLD_H..WORLD_H);
+    commands.spawn((
+      SpriteSheetBundle {
+        texture: image_handle.0.clone().unwrap(),
+        atlas: TextureAtlas {
+          layout: texture_atlas.0.clone().unwrap(),
+          index: rng.gen_range(24..=25),
+        },
+        transform: Transform::from_translation(vec3(x, y, 0.0))
+          .with_scale(Vec3::splat(SPRITE_SCALE_FACTOR)),
+        ..default()
+      },
+      // WorldDecoration,
+    ));
+  }
+}
+
+fn camera_follow_player(
+  player_query: Query<&Transform, With<Player>>,
+  mut camera_query: Query<&mut Transform, (With<Camera>, Without<Player>)>,
+) {
+  if player_query.is_empty() || camera_query.is_empty() {
+    return;
+  }
+  let player_pos = player_query.single().translation.truncate();
+  let mut camera_transform = camera_query.single_mut();
+  camera_transform.translation = camera_transform
+    .translation
+    .lerp(vec3(player_pos.x, player_pos.y, 10.0), 0.1);
 }
