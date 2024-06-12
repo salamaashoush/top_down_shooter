@@ -17,6 +17,7 @@ const TILE_H: usize = 16;
 const SPRITE_SHEET_W: usize = 4;
 const SPRITE_SHEET_H: usize = 4;
 const BULLET_SPAWN_INTERVAL: f32 = 0.2;
+const BULLET_SPEED: f32 = 10.0;
 // Colors
 const BG_COLOR: (u8, u8, u8) = (197, 204, 184);
 
@@ -41,6 +42,9 @@ struct GunTimer(Stopwatch);
 
 #[derive(Component)]
 struct Bullet;
+
+#[derive(Component)]
+struct BulletDirection(Vec3);
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 enum GameState {
@@ -86,6 +90,7 @@ fn main() {
         update_gun_transform,
         update_cursor_position,
         handle_gun_input,
+        update_bullets,
       )
         .run_if(in_state(GameState::InGame)),
     )
@@ -241,6 +246,7 @@ fn handle_gun_input(
     return;
   }
 
+  let bullet_dirction = gun_transform.local_x();
   if gun_timer.0.elapsed_secs() >= BULLET_SPAWN_INTERVAL {
     gun_timer.0.reset();
     commands.spawn((
@@ -255,6 +261,17 @@ fn handle_gun_input(
         ..default()
       },
       Bullet,
+      BulletDirection(*bullet_dirction),
     ));
+  }
+}
+
+fn update_bullets(mut bullet_query: Query<(&mut Transform, &BulletDirection), With<Bullet>>) {
+  if bullet_query.is_empty() {
+    return;
+  }
+  for (mut transform, direction) in bullet_query.iter_mut() {
+    transform.translation += vec3(direction.0.x, direction.0.y, 0.0) * BULLET_SPEED;
+    transform.translation.z = 10.0;
   }
 }
