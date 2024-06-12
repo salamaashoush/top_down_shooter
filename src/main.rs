@@ -3,9 +3,8 @@ use std::f32::consts::PI;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::math::{vec2, vec3};
 use bevy::prelude::*;
-use bevy::render::camera;
+use bevy::time::Stopwatch;
 use bevy::window::{close_on_esc, PrimaryWindow};
-
 // Window
 const WW: f32 = 1200.0;
 const WH: f32 = 900.0;
@@ -17,7 +16,7 @@ const TILE_W: usize = 16;
 const TILE_H: usize = 16;
 const SPRITE_SHEET_W: usize = 4;
 const SPRITE_SHEET_H: usize = 4;
-
+const BULLET_SPAWN_INTERVAL: f32 = 0.2;
 // Colors
 const BG_COLOR: (u8, u8, u8) = (197, 204, 184);
 
@@ -36,6 +35,12 @@ struct Player;
 
 #[derive(Component)]
 struct Gun;
+
+#[derive(Component)]
+struct GunTimer(Stopwatch);
+
+#[derive(Component)]
+struct Bullet;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 enum GameState {
@@ -80,6 +85,7 @@ fn main() {
         handle_player_input,
         update_gun_transform,
         update_cursor_position,
+        handle_gun_input,
       )
         .run_if(in_state(GameState::InGame)),
     )
@@ -138,6 +144,7 @@ fn init_world(
       ..default()
     },
     Gun,
+    GunTimer(Stopwatch::new()),
   ));
   next_state.set(GameState::InGame);
 }
@@ -212,4 +219,42 @@ fn update_cursor_position(
     .cursor_position()
     .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor))
     .map(|ray| ray.origin.truncate());
+}
+
+fn handle_gun_input(
+  mut commands: Commands,
+  time: Res<Time>,
+  texture_atlas: Res<GlobalTextureAtlasHandle>,
+  image_handle: Res<GlobalSpriteSheetHandle>,
+  mouse_button_input: Res<ButtonInput<MouseButton>>,
+  mut gun_query: Query<(&Transform, &mut GunTimer), With<Gun>>,
+) {
+  if gun_query.is_empty() {
+    return;
+  }
+
+  let (gun_transform, mut gun_timer) = gun_query.single_mut();
+  let gun_pos = gun_transform.translation.truncate();
+  gun_timer.0.tick(time.delta());
+
+  if !mouse_button_input.pressed(MouseButton::Left) {
+    return;
+  }
+
+  if gun_timer.0.elapsed_secs() >= BULLET_SPAWN_INTERVAL {
+    gun_timer.0.reset();
+    commands.spawn((
+      SpriteSheetBundle {
+        texture: image_handle.0.clone().unwrap(),
+        atlas: TextureAtlas {
+          layout: texture_atlas.0.clone().unwrap(),
+          index: 3,
+        },
+        transform: Transform::from_translation(vec3(gun_pos.x, gun_pos.y, 1.0))
+          .with_scale(Vec3::splat(SPRITE_SCALE_FACTOR)),
+        ..default()
+      },
+      Bullet,
+    ));
+  }
 }
